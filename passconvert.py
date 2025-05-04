@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+import logging
 import sys
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
@@ -9,6 +10,11 @@ from typing import Generator, Optional
 
 import gnupg
 from pykeepass import PyKeePass
+from pykeepass.exceptions import CredentialsError
+
+
+logging.basicConfig(format="{asctime} {levelname}: {message}", style="{", level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -101,16 +107,32 @@ def read_cyphertexts(
 
 def main() -> None:
     params = parse_args(sys.argv)
-    gpg = gnupg.GPG()
-    password = getpass(f"Password for {params.keepass_file}: ")
-    keepass = PyKeePass(params.keepass_file, password=password, keyfile=params.key_file)
 
+    LOGGER.info("Initializing GPG")
+    gpg = gnupg.GPG()
+
+    LOGGER.info("Loading KeePass file %s", params.keepass_file)
+    password = getpass(f"Password for {params.keepass_file}: ")
+    try:
+        keepass = PyKeePass(params.keepass_file, password=password, keyfile=params.key_file)
+    except CredentialsError:
+        LOGGER.error("Could not open %s due to invalid credentials", params.keepass_file)
+        return
+
+    LOGGER.info("Converting passwords in %s", params.password_store / params.folder)
     for filepath, cyphertext in read_cyphertexts(params.password_store, params.folder):
         plaintext = gpg.decrypt(cyphertext)
         credentials = Credentials.from_entry(filepath, str(plaintext), params.url_from_title)
         credentials.save(keepass, str(params.folder))
+        print(".", end="", flush=True)
 
+    # Produce a newline
+    print()
+
+    LOGGER.info("Saving KeePass file %s", params.keepass_file)
     keepass.save()
+
+    LOGGER.info("Done.")
 
 
 if __name__ == "__main__":
