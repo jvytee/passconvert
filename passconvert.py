@@ -24,6 +24,7 @@ class Params:
     folder: Path
     key_file: Optional[Path] = None
     url_from_title: bool = False
+    verbose: bool = False
 
 
 @dataclass
@@ -85,6 +86,9 @@ def parse_args(argv: list[str]) -> Params:
         default=False,
         help="Derive URL from filename/title of password store entry",
     )
+    argument_parser.add_argument(
+        "-v", "--verbose", action="store_true", default=False, help="Increase output verbosity"
+    )
 
     args = argument_parser.parse_args(argv[1:])
     return Params(
@@ -93,6 +97,7 @@ def parse_args(argv: list[str]) -> Params:
         folder=args.folder,
         key_file=args.key_file,
         url_from_title=args.url_from_title,
+        verbose=args.verbose,
     )
 
 
@@ -123,8 +128,16 @@ def main() -> None:
     for filepath, cyphertext in read_cyphertexts(params.password_store, params.folder):
         plaintext = gpg.decrypt(cyphertext)
         credentials = Credentials.from_entry(filepath, str(plaintext), params.url_from_title)
-        credentials.save(keepass, str(params.folder))
-        print(".", end="", flush=True)
+
+        try:
+            credentials.save(keepass, str(params.folder))
+        except Exception as e:
+            LOGGER.warning("Could not save credentials for %s: %s", credentials.title, e)
+
+        if params.verbose:
+            LOGGER.info("%s", credentials)
+        else:
+            print(".", end="", flush=True)
 
     # Produce a newline
     print()
